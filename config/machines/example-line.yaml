@@ -1,0 +1,61 @@
+machine:
+  id: line-01
+  name: Línea de producción 01
+
+agent:
+  poll_interval_seconds: 1.0
+  server_url: null  # ej: http://192.168.1.10:8000
+
+plc:
+  ip: 192.168.1.100
+  port: 502
+  slave: 1
+  m_base: 2000
+  timeout: 3
+
+registers:
+  accepted: 12
+  rejected: 14
+  total: 16
+
+coils:
+  running_status: 1009
+  stop_active: 70
+  lot_finished: 43
+
+strings:
+  lot:
+    register: 6240
+    length: 8
+  product:
+    register: 6250
+    length: 15
+  operator:
+    register: 6265
+    length: 8
+
+stop_motives:
+  start: 140
+  count: 21
+  labels:
+    140: FALLA_MECANICA
+    141: FALLA_ELECTRICA
+    142: FALLA_SENSOR
+    143: FALLA_NEUMATICA
+    144: FALLA_HIDRAULICA
+    145: AJUSTE_DE_FORMATO
+    146: AJUSTE_DE_CARRUSEL
+    147: AJUSTE_DE_CINTA
+    148: AJUSTE_DE_VOLTAJE
+    149: AJUSTE_DE_PENDULO
+    150: AJUSTE_MERMA_ALTA
+    151: ENERGIA_ELECTRICA
+    152: PRESION_DE_AIRE
+    153: OPERARIO
+    154: LIBERACION_DE_LINEA
+    155: MATERIALES
+    156: ENTRADA_Y_SALIDA_DE_TURNO
+    157: LIMPIEZA_DE_MAQUINA
+    158: CAMBIO_DE_SERIE
+    159: MANTENCION_PROGRAMADA
+    160: CAMBIO_DE_FORMATO

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.venv/
+venv/
+logs/*.log
+logs/buffer/
+data/
+config/machines/*-local.yaml
+config/machines/ima-*.yaml
+.pytest_cache/
+*.egg-info/

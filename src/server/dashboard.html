@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Industrial Bridge — Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --green: #3dd68c;
+      --red: #f07178;
+      --yellow: #ffcc66;
+      --blue: #59c2ff;
+      --border: #2a3648;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    .subtitle { color: var(--muted); margin-bottom: 24px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      color: var(--blue);
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .status.running { background: rgba(61,214,140,0.15); color: var(--green); }
+    .status.stopped { background: rgba(240,113,120,0.15); color: var(--red); }
+    .status.offline { background: rgba(139,156,179,0.15); color: var(--muted); }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.95rem;
+    }
+    .metric:last-child { border-bottom: none; }
+    .metric span:last-child { color: var(--muted); }
+    .events { max-height: 420px; overflow-y: auto; }
+    .event {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    .event-type { color: var(--yellow); font-weight: 600; }
+    .event-time { color: var(--muted); font-size: 0.8rem; }
+    .empty { color: var(--muted); font-style: italic; }
+    .footer { color: var(--muted); font-size: 0.85rem; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h1>Industrial Bridge</h1>
+  <p class="subtitle">Estado en tiempo real de líneas de producción</p>
+
+  <div id="machines" class="grid"></div>
+
+  <div class="card">
+    <h2>Eventos recientes</h2>
+    <div id="events" class="events"></div>
+  </div>
+
+  <p class="footer">Actualización automática cada 5 segundos</p>
+
+  <script>
+    function statusBadge(snapshot) {
+      if (!snapshot.plc_connected) return '<span class="status offline">Sin PLC</span>';
+      if (snapshot.running) return '<span class="status running">Operando</span>';
+      return '<span class="status stopped">Detenida</span>';
+    }
+
+    function renderMachine(snapshot) {
+      return `
+        <div class="card">
+          <h2>${snapshot.machine_id.toUpperCase()}</h2>
+          ${statusBadge(snapshot)}
+          <div style="margin-top:12px">
+            <div class="metric"><strong>Lote</strong><span>${snapshot.lot || '-'}</span></div>
+            <div class="metric"><strong>Producto</strong><span>${snapshot.product || '-'}</span></div>
+            <div class="metric"><strong>Operador</strong><span>${snapshot.operator || '-'}</span></div>
+            <div class="metric"><strong>Aceptadas</strong><span>${snapshot.accepted}</span></div>
+            <div class="metric"><strong>Rechazadas</strong><span>${snapshot.rejected}</span></div>
+            <div class="metric"><strong>Total</strong><span>${snapshot.total}</span></div>
+            <div class="metric"><strong>Parada activa</strong><span>${snapshot.stop_active ? 'Sí' : 'No'}</span></div>
+            <div class="metric"><strong>Motivo</strong><span>${snapshot.stop_reason_text || '-'}</span></div>
+            <div class="metric"><strong>Última lectura</strong><span>${snapshot.timestamp || '-'}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderEvent(event) {
+      const payload = JSON.stringify(event.payload || {});
+      return `
+        <div class="event">
+          <div><span class="event-type">${event.event_type}</span> — ${event.machine_id}</div>
+          <div class="event-time">${event.timestamp}</div>
+          <div>${payload}</div>
+        </div>
+      `;
+    }
+
+    async function refresh() {
+      const machinesEl = document.getElementById('machines');
+      const eventsEl = document.getElementById('events');
+
+      try {
+        const machinesRes = await fetch('/api/v1/machines');
+        const machinesData = await machinesRes.json();
+        const machines = machinesData.machines || [];
+
+        if (machines.length === 0) {
+          machinesEl.innerHTML = '<div class="card empty">Aún no hay datos. Inicia el agente en la Raspberry.</div>';
+        } else {
+          const snapshots = await Promise.all(
+            machines.map(async (id) => {
+              const res = await fetch(`/api/v1/machines/${id}/latest`);
+              return res.ok ? res.json() : null;
+            })
+          );
+          machinesEl.innerHTML = snapshots.filter(Boolean).map(renderMachine).join('');
+        }
+
+        const allEvents = [];
+        for (const id of machines) {
+          const res = await fetch(`/api/v1/machines/${id}/events?limit=10`);
+          if (res.ok) {
+            const data = await res.json();
+            allEvents.push(...(data.events || []));
+          }
+        }
+        allEvents.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        eventsEl.innerHTML = allEvents.length
+          ? allEvents.slice(0, 20).map(renderEvent).join('')
+          : '<div class="empty">Sin eventos todavía</div>';
+      } catch (err) {
+        machinesEl.innerHTML = '<div class="card empty">Error cargando datos del servidor</div>';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
