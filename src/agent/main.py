@@ -10,6 +10,7 @@ from src.agent.collector import SnapshotCollector
 from src.agent.events import EventDetector
 from src.agent.simulate import SimulatedCollector
 from src.connectors.http_publisher import HttpPublisher
+from src.connectors.openmes_gateway import OpenMesGateway
 from src.utils.config_loader import load_machine_config
 
 logging.basicConfig(
@@ -37,7 +38,23 @@ class AgentRunner:
         server_url = self.agent_cfg.get("server_url")
         if server_url:
             self.publisher = HttpPublisher(server_url)
+        self.openmes = self._build_openmes_gateway(config.get("openmes"))
         self._running = True
+
+    def _build_openmes_gateway(self, cfg: dict | None) -> OpenMesGateway | None:
+        if not cfg:
+            return None
+        base_url = cfg.get("base_url")
+        connection_id = cfg.get("connection_id")
+        api_token = cfg.get("api_token")
+        if not base_url or connection_id is None or not api_token:
+            return None
+        return OpenMesGateway(
+            base_url=base_url,
+            connection_id=int(connection_id),
+            api_token=api_token,
+            tag_map=cfg.get("tag_map"),
+        )
 
     def stop(self, *_args) -> None:
         logger.info("Deteniendo agente...")
@@ -59,16 +76,17 @@ class AgentRunner:
         self.buffer.append_snapshot(snapshot)
         self.buffer.append_events(events)
 
-        if not self.publisher:
-            return
+        if self.publisher:
+            snapshot_ok = self.publisher.publish_snapshot(snapshot)
+            if not snapshot_ok:
+                self.buffer.queue_snapshot(snapshot)
 
-        snapshot_ok = self.publisher.publish_snapshot(snapshot)
-        if not snapshot_ok:
-            self.buffer.queue_snapshot(snapshot)
+            for event in events:
+                if not self.publisher.publish_event(event):
+                    self.buffer.queue_event(event)
 
-        for event in events:
-            if not self.publisher.publish_event(event):
-                self.buffer.queue_event(event)
+        if self.openmes and not self.openmes.publish_snapshot(snapshot):
+            logger.warning("OpenMES no aceptó el snapshot (revisa tags/token)")
 
     def run_once(self) -> None:
         self._replay_pending()
@@ -102,12 +120,13 @@ class AgentRunner:
         machine_id = self.config["machine"]["id"]
         mode = "SIMULACIÓN" if self.simulate else "PLC"
         logger.info(
-            "Iniciando agente [%s] machine=%s poll=%.1fs buffer=%s publisher=%s",
+            "Iniciando agente [%s] machine=%s poll=%.1fs buffer=%s publisher=%s openmes=%s",
             mode,
             machine_id,
             self.poll_interval,
             self.buffer.directory,
             bool(self.publisher),
+            bool(self.openmes),
         )
 
         if not self.collector.connect():

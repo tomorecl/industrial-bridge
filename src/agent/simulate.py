@@ -33,8 +33,8 @@ class SimulatedCollector:
 
         if self._running:
             self._accepted += random.randint(1, 3)
-            if random.random() < 0.1:
-                self._rejected += 1
+            if random.random() < 0.35:
+                self._rejected += random.randint(1, 2)
 
         if self._tick % 40 == 0:
             lot_num = int(self._lot.split("-")[1]) + 1
